@@ -1,3 +1,5 @@
+# chan源码阅读
+
 > 不要通过共享内存来通信，而应该通过通信(消息)来共享内存  
 > Communicating Sequential Processes（通信顺序进程CSP）  
 > 本文基于go 1.16源码  
