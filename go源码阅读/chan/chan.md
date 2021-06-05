@@ -576,6 +576,6 @@ func closechan(c *hchan) {
 ```
 ### 问题：
 1. channel如何做到并发安全的?  
-答：通过lock保证并发安全，复杂的解释可依次讲下chansend和chanrecv和close里各自在lock、unlock包裹的代码逻辑讲下
+答：通过lock保证并发时qcount，buf，sendx，recvx，sendq，recvq,closed数据的安全读写，从而实现channel读写的并发安全
 2. channel如何保证有序？  
 答：通过lock和buf环形队列一起保证有序
