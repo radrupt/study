@@ -581,3 +581,14 @@ func closechan(c *hchan) {
 答：通过lock保证并发时qcount，buf，sendx，recvx，sendq，recvq,closed数据的安全读写，从而实现channel读写的并发安全
 2. channel如何保证有序？  
 答：通过lock和buf环形队列一起保证有序
+
+
+参考：  
+https://www.infoq.cn/article/nuvrpz1cpk9cw0hp3bky
+https://www.infoq.cn/article/r6wzs7bvq2er9kuelbqb
+https://zboya.github.io/post/go_scheduler/
+https://blog.xiaokezhao.com/locks-golang-mutex-implementation-performance-measure/
+https://xujianhai.fun/posts/golang-sync/
+https://ustack.io/2019-10-04-Golang%E6%BC%AB%E8%B0%88%E4%B9%8Bchannel%E5%A6%99%E6%B3%95.html
+http://blog.newbmiao.com/2019/10/10/go_mutex_insight.html
+https://jishuin.proginn.com/p/763bfbd298dc
