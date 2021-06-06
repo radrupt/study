@@ -584,11 +584,11 @@ func closechan(c *hchan) {
 
 
 参考：  
-https://www.infoq.cn/article/nuvrpz1cpk9cw0hp3bky
-https://www.infoq.cn/article/r6wzs7bvq2er9kuelbqb
-https://zboya.github.io/post/go_scheduler/
-https://blog.xiaokezhao.com/locks-golang-mutex-implementation-performance-measure/
-https://xujianhai.fun/posts/golang-sync/
-https://ustack.io/2019-10-04-Golang%E6%BC%AB%E8%B0%88%E4%B9%8Bchannel%E5%A6%99%E6%B3%95.html
-http://blog.newbmiao.com/2019/10/10/go_mutex_insight.html
-https://jishuin.proginn.com/p/763bfbd298dc
+[详尽干货！从源码角度看 Golang 的调度（上）](https://www.infoq.cn/article/r6wzs7bvq2er9kuelbqb)  
+[详尽干货！从源码角度看 Golang 的调度（下）](https://www.infoq.cn/article/nuvrpz1cpk9cw0hp3bky)  
+[深入golang runtime的调度](https://zboya.github.io/post/go_scheduler/)   
+[Linux Lock 与 Golang Mutex 的实现与性能分析](https://blog.xiaokezhao.com/locks-golang-mutex-implementation-performance-measure/)  
+[Golang Sync](https://xujianhai.fun/posts/golang-sync/)  
+[OLANG漫谈](https://ustack.io/2019-10-04-Golang%E6%BC%AB%E8%B0%88%E4%B9%8Bchannel%E5%A6%99%E6%B3%95.html)  
+[golang的Mutex锁如何实现](http://blog.newbmiao.com/2019/10/10/go_mutex_insight.html)   
+[深度剖析 Golang 的 GC 扫描对象的实现](https://jishuin.proginn.com/p/763bfbd298dc)
