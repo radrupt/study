@@ -5,31 +5,28 @@ ___
 进度  
 
 - [x] 第一遍粗看
-- [ ] 查资料看网上分析常量
+- [x] 第二遍细看
 
 ### 常量
 
 ```
 const (
-	// Maximum number of key/elem pairs a bucket can hold.
-	bucketCntBits = 3
+	bucketCntBits = 3 // cnt: count缩写 一个bucket最大存储k/v对数量为2^3, 即实际使用bucketCnt 字段
 	bucketCnt     = 1 << bucketCntBits
 
-	// Maximum average load of a bucket that triggers growth is 6.5.
-	// Represent as loadFactorNum/loadFactorDen, to allow integer math.
-	loadFactorNum = 13
+    // 可以将它理解为基准来判断hash表中bucket里cell的数量情况，一个bucket最大平均存储cell的数量
+    // 即一个bucket平均存放6.5个cell
+	loadFactorNum = 13 // 装载因子常量
 	loadFactorDen = 2
 
 	// Maximum key or elem size to keep inline (instead of mallocing per element).
 	// Must fit in a uint8.
 	// Fast versions cannot handle big elems - the cutoff size for
 	// fast versions in cmd/compile/internal/gc/walk.go must be at most this elem.
-	maxKeySize  = 128
-	maxElemSize = 128
+	maxKeySize  = 128 // key的最大内存大小，单位待确认？
+	maxElemSize = 128 // v的最大内存大小
 
-	// data offset should be the size of the bmap struct, but needs to be
-	// aligned correctly. For amd64p32 this means 64-bit alignment
-	// even though pointers are 32 bit.
+    // v存储地址相对结构体的偏移量，即通过结构体指针快速找到value的存储地址
 	dataOffset = unsafe.Offsetof(struct {
 		b bmap
 		v int64
@@ -46,11 +43,11 @@ const (
 	evacuatedEmpty = 4 // cell is empty, bucket is evacuated.
 	minTopHash     = 5 // minimum tophash for a normal filled cell.
 
-	// flags
+	// flags， 注意这里的特点就是以下4个常量与操作为0
 	iterator     = 1 // there may be an iterator using buckets
 	oldIterator  = 2 // there may be an iterator using oldbuckets
 	hashWriting  = 4 // a goroutine is writing to the map
-	sameSizeGrow = 8 // the current map growth is to a new map of the same size
+	sameSizeGrow = 8 // 使用新的map等量扩容
 
 	// sentinel bucket ID for iterator checks
 	noCheck = 1<<(8*sys.PtrSize) - 1
@@ -60,14 +57,14 @@ const (
 ### hmap数据结构
 ```
 type hmap struct {
-	count     int // len() , map中key的数量
-	flags     uint8
-	B         uint8  // log_2 of # of buckets (can hold up to loadFactor * 2^B items)
+	count     int // 表示当前哈希表中的元素数量
+	flags     uint8 // 限制并发写标志
+	B         uint8  //  表示当前哈希表持有的 buckets 数量，但是因为哈希表中桶的数量都 2 的倍数，所以该字段会存储对数，也就是 len(buckets) == 2^B，注意不包含overflow的buckets
 	noverflow uint16 // approximate number of overflow buckets; see incrnoverflow for details
-	hash0     uint32 // hash seed
+	hash0     uint32 // 是哈希的种子，它能为哈希函数的结果引入随机性，这个值在创建哈希表时确定，并在调用哈希函数时作为参数传入， 可以认为这是出于安全考虑
 
 	buckets    unsafe.Pointer // array of 2^B Buckets. may be nil if count==0.
-	oldbuckets unsafe.Pointer // previous bucket array of half the size, non-nil only when growing
+	oldbuckets unsafe.Pointer // 扩容后旧的buckets， 由于扩容后数据不是一次性迁移到新的buckets的，所以旧的依然需要保留用于操作
 	nevacuate  uintptr        // progress counter for evacuation (buckets less than this have been evacuated)
 
 	extra *mapextra // optional fields
@@ -82,13 +79,13 @@ type mapextra struct {
 	// overflow contains overflow buckets for hmap.buckets.
 	// oldoverflow contains overflow buckets for hmap.oldbuckets.
 	// The indirection allows to store a pointer to the slice in hiter.
-	overflow    *[]*bmap
-	oldoverflow *[]*bmap
+	overflow    *[]*bmap // 防止被gc，保存hmap.buckets指针
+	oldoverflow *[]*bmap // 防止被gc，保存hmap.oldbuckets指针
 
 	// nextOverflow holds a pointer to a free overflow bucket.
 	nextOverflow *bmap
 }
-// A bucket for a Go map.
+// A bucket for a Go map. tophash 存储了hash的高8位值
 type bmap struct {
 	// tophash generally contains the top byte of the hash value
 	// for each key in this bucket. If tophash[0] < minTopHash,
@@ -100,7 +97,7 @@ type bmap struct {
 	// us to eliminate padding which would be needed for, e.g., map[int64]int8.
 	// Followed by an overflow pointer.
 }
-// A hash iteration structure.
+// A hash iteration structure. 迭代器返回的数据结构
 // If you modify hiter, also change cmd/compile/internal/gc/reflect.go to indicate
 // the layout of this structure.
 type hiter struct {
@@ -113,7 +110,7 @@ type hiter struct {
 	overflow    *[]*bmap       // keeps overflow buckets of hmap.buckets alive
 	oldoverflow *[]*bmap       // keeps overflow buckets of hmap.oldbuckets alive
 	startBucket uintptr        // bucket iteration started at
-	offset      uint8          // intra-bucket offset to start from during iteration (should be big enough to hold bucketCnt-1)
+	offset      uint8          // 迭代器迭代到第几个了
 	wrapped     bool           // already wrapped around from end of bucket array to beginning
 	B           uint8
 	i           uint8
@@ -128,28 +125,32 @@ type hiter struct {
 // can be created on the stack, h and/or bucket may be non-nil.
 // If h != nil, the map can be created directly in h.
 // If h.buckets != nil, bucket pointed to can be used as the first bucket.
+// hint: k/v pairs个数
 func makemap(t *maptype, hint int, h *hmap) *hmap {
+    // 判断map初始化的内存是否溢出, 或者超过最大分配空间，如果溢出则将bucket数量初始化为0
 	mem, overflow := math.MulUintptr(uintptr(hint), t.bucket.size)
 	if overflow || mem > maxAlloc {
 		hint = 0
 	}
 
-	// initialize Hmap
+	// 初始化
 	if h == nil {
 		h = new(hmap)
 	}
-	h.hash0 = fastrand()
+	h.hash0 = fastrand() // 生成32位无符号随机数，用来做什么？
 
 	// Find the size parameter B which will hold the requested # of elements.
 	// For hint < 0 overLoadFactor returns false since hint < bucketCnt.
 	B := uint8(0)
+    // 初始化元素数量 > 默认bucket中8个cell数量 && 初始化元素数量  > 6.5装载常量 * bucket数量（2的B指数值），则累加B
+    // 这里就是得到一个最适合当前需要容量的hash table的bucket数量
 	for overLoadFactor(hint, B) {
 		B++
 	}
 	h.B = B
 
-	// allocate initial hash table
-	// if B == 0, the buckets field is allocated lazily later (in mapassign)
+	// 初始化hash table
+	// if B == 0, mapassign的时候初始化（即实际使用的时候分配内存） 
 	// If hint is large zeroing this memory could take a while.
 	if h.B != 0 {
 		var nextOverflow *bmap
@@ -169,105 +170,80 @@ func makemap(t *maptype, hint int, h *hmap) *hmap {
 // If dirtyalloc is nil a new backing array will be alloced and
 // otherwise dirtyalloc will be cleared and reused as backing array.
 func makeBucketArray(t *maptype, b uint8, dirtyalloc unsafe.Pointer) (buckets unsafe.Pointer, nextOverflow *bmap) {
-	base := bucketShift(b)
+	base := bucketShift(b) // 2的指数个buckets
 	nbuckets := base
-	// For small b, overflow buckets are unlikely.
-	// Avoid the overhead of the calculation.
-	if b >= 4 {
-		// Add on the estimated number of overflow buckets
-		// required to insert the median number of elements
-		// used with this value of b.
-		nbuckets += bucketShift(b - 4)
-		sz := t.bucket.size * nbuckets
-		up := roundupsize(sz)
-		if up != sz {
+	if b >= 4 { // 小于4（16），不太可能用到溢出桶
+		nbuckets += bucketShift(b - 4) // 加上用于overflow情况的buckets
+		sz := t.bucket.size * nbuckets // 内存大小
+		up := roundupsize(sz) // 内存对齐，提高内存分配效率
+		if up != sz {  // 这里可以理解为内存对齐后，新连续内存空间能存放的bucket变动了
 			nbuckets = up / t.bucket.size
 		}
 	}
 
-	if dirtyalloc == nil {
+	if dirtyalloc == nil { // 之前没分配过
 		buckets = newarray(t.bucket, int(nbuckets))
-	} else {
-		// dirtyalloc was previously generated by
-		// the above newarray(t.bucket, int(nbuckets))
-		// but may not be empty.
+	} else { // 使用之前分配的
 		buckets = dirtyalloc
 		size := t.bucket.size * nbuckets
-		if t.bucket.ptrdata != 0 {
+		if t.bucket.ptrdata != 0 { // 有指针的情况，清空数据
 			memclrHasPointers(buckets, size)
-		} else {
+		} else { // 无指针的情况，清空数据
 			memclrNoHeapPointers(buckets, size)
 		}
 	}
-
-	if base != nbuckets {
-		// We preallocated some overflow buckets.
-		// To keep the overhead of tracking these overflow buckets to a minimum,
-		// we use the convention that if a preallocated overflow bucket's overflow
-		// pointer is nil, then there are more available by bumping the pointer.
-		// We need a safe non-nil pointer for the last overflow bucket; just use buckets.
-		nextOverflow = (*bmap)(add(buckets, base*uintptr(t.bucketsize)))
-		last := (*bmap)(add(buckets, (nbuckets-1)*uintptr(t.bucketsize)))
-		last.setoverflow(t, (*bmap)(buckets))
+    // 这里预分配了overflowbuckets后，做了一些指针设置方便track
+	if base != nbuckets { // 上方分配的内存中包含了overflow情况的内存，
+		nextOverflow = (*bmap)(add(buckets, base*uintptr(t.bucketsize))) // 记录overflow的第一个bucket内存地址
+		last := (*bmap)(add(buckets, (nbuckets-1)*uintptr(t.bucketsize))) // 记录overflow的最后一个bucket内存地址
+		last.setoverflow(t, (*bmap)(buckets)) // ??
 	}
 	return buckets, nextOverflow
 }
 ```
 ### 读map
 ```
-// mapaccess1 returns a pointer to h[key].  Never returns nil, instead
-// it will return a reference to the zero object for the elem type if
-// the key is not in the map.
-// NOTE: The returned pointer may keep the whole map live, so don't
-// hold onto it for very long.
+// mapaccess1 返回指向h[key]的指针. 如果key不存在返回zero object for the elem type
+// 中间代码生成阶段：v := hash[key] => v := *mapaccess1(maptype, hash, &key)
+// 中间代码生成阶段：v, ok := hash[key] // => v, ok := mapaccess2(maptype, hash, &key)
 func mapaccess1(t *maptype, h *hmap, key unsafe.Pointer) unsafe.Pointer {
-	if raceenabled && h != nil {
-		callerpc := getcallerpc()
-		pc := funcPC(mapaccess1)
-		racereadpc(unsafe.Pointer(h), callerpc, pc)
-		raceReadObjectPC(t.key, key, callerpc, pc)
-	}
-	if msanenabled && h != nil {
-		msanread(key, t.key.size)
-	}
 	if h == nil || h.count == 0 {
 		if t.hashMightPanic() {
 			t.hasher(key, 0) // see issue 23734
 		}
-		return unsafe.Pointer(&zeroVal[0])
+		return unsafe.Pointer(&zeroVal[0]) // 返回zero object
 	}
 	if h.flags&hashWriting != 0 {
-		throw("concurrent map read and map write")
+		throw("concurrent map read and map write") // 并发读写报错，flags和hashwriting关系是什么？
 	}
-	hash := t.hasher(key, uintptr(h.hash0))
-	m := bucketMask(h.B)
-	b := (*bmap)(add(h.buckets, (hash&m)*uintptr(t.bucketsize)))
-	if c := h.oldbuckets; c != nil {
-		if !h.sameSizeGrow() {
-			// There used to be half as many buckets; mask down one more power of two.
-			m >>= 1
+	hash := t.hasher(key, uintptr(h.hash0)) // 获得key的hash值，这里hasher会根据不同类型使用不同方式
+	m := bucketMask(h.B) // 用于除余
+	b := (*bmap)(add(h.buckets, (hash&m)*uintptr(t.bucketsize))) // 除余得到key在对应个bucket的内存地址
+	if c := h.oldbuckets; c != nil { // 也就是如果存在未迁移的bucket，则对应下标的新buckets中数据还没有，得从旧的找
+		if !h.sameSizeGrow() { // 当前未做等量扩容, 则扩容一半，影响寻址
+			m >>= 1 // m减半
 		}
-		oldb := (*bmap)(add(c, (hash&m)*uintptr(t.bucketsize)))
-		if !evacuated(oldb) {
+		oldb := (*bmap)(add(c, (hash&m)*uintptr(t.bucketsize))) // 得到未扩容的bucket的内存地址
+		if !evacuated(oldb) { // 如果这个bucket还有数据？
 			b = oldb
 		}
 	}
-	top := tophash(hash)
+	top := tophash(hash) // ?
 bucketloop:
-	for ; b != nil; b = b.overflow(t) {
+	for ; b != nil; b = b.overflow(t) { // b是某个具体的bucket，是怎么关联上overflow的呢？
 		for i := uintptr(0); i < bucketCnt; i++ {
 			if b.tophash[i] != top {
-				if b.tophash[i] == emptyRest {
+				if b.tophash[i] == emptyRest { // 表示当前bucket已经空了，换到下一个bucket找
 					break bucketloop
 				}
 				continue
 			}
-			k := add(unsafe.Pointer(b), dataOffset+i*uintptr(t.keysize))
-			if t.indirectkey() {
+			k := add(unsafe.Pointer(b), dataOffset+i*uintptr(t.keysize)) // 不懂
+			if t.indirectkey() { // key是指针则继续取值
 				k = *((*unsafe.Pointer)(k))
 			}
 			if t.key.equal(key, k) {
-				e := add(unsafe.Pointer(b), dataOffset+bucketCnt*uintptr(t.keysize)+i*uintptr(t.elemsize))
+				e := add(unsafe.Pointer(b), dataOffset+bucketCnt*uintptr(t.keysize)+i*uintptr(t.elemsize)) // 和上面一样，得搞懂key和value的内存地址i关系
 				if t.indirectelem() {
 					e = *((*unsafe.Pointer)(e))
 				}
@@ -275,163 +251,34 @@ bucketloop:
 			}
 		}
 	}
+    // 返回空
 	return unsafe.Pointer(&zeroVal[0])
-}
-
-func mapaccess2(t *maptype, h *hmap, key unsafe.Pointer) (unsafe.Pointer, bool) {
-	if raceenabled && h != nil {
-		callerpc := getcallerpc()
-		pc := funcPC(mapaccess2)
-		racereadpc(unsafe.Pointer(h), callerpc, pc)
-		raceReadObjectPC(t.key, key, callerpc, pc)
-	}
-	if msanenabled && h != nil {
-		msanread(key, t.key.size)
-	}
-	if h == nil || h.count == 0 {
-		if t.hashMightPanic() {
-			t.hasher(key, 0) // see issue 23734
-		}
-		return unsafe.Pointer(&zeroVal[0]), false
-	}
-	if h.flags&hashWriting != 0 {
-		throw("concurrent map read and map write")
-	}
-	hash := t.hasher(key, uintptr(h.hash0))
-	m := bucketMask(h.B)
-	b := (*bmap)(unsafe.Pointer(uintptr(h.buckets) + (hash&m)*uintptr(t.bucketsize)))
-	if c := h.oldbuckets; c != nil {
-		if !h.sameSizeGrow() {
-			// There used to be half as many buckets; mask down one more power of two.
-			m >>= 1
-		}
-		oldb := (*bmap)(unsafe.Pointer(uintptr(c) + (hash&m)*uintptr(t.bucketsize)))
-		if !evacuated(oldb) {
-			b = oldb
-		}
-	}
-	top := tophash(hash)
-bucketloop:
-	for ; b != nil; b = b.overflow(t) {
-		for i := uintptr(0); i < bucketCnt; i++ {
-			if b.tophash[i] != top {
-				if b.tophash[i] == emptyRest {
-					break bucketloop
-				}
-				continue
-			}
-			k := add(unsafe.Pointer(b), dataOffset+i*uintptr(t.keysize))
-			if t.indirectkey() {
-				k = *((*unsafe.Pointer)(k))
-			}
-			if t.key.equal(key, k) {
-				e := add(unsafe.Pointer(b), dataOffset+bucketCnt*uintptr(t.keysize)+i*uintptr(t.elemsize))
-				if t.indirectelem() {
-					e = *((*unsafe.Pointer)(e))
-				}
-				return e, true
-			}
-		}
-	}
-	return unsafe.Pointer(&zeroVal[0]), false
-}
-
-// returns both key and elem. Used by map iterator
-func mapaccessK(t *maptype, h *hmap, key unsafe.Pointer) (unsafe.Pointer, unsafe.Pointer) {
-	if h == nil || h.count == 0 {
-		return nil, nil
-	}
-	hash := t.hasher(key, uintptr(h.hash0))
-	m := bucketMask(h.B)
-	b := (*bmap)(unsafe.Pointer(uintptr(h.buckets) + (hash&m)*uintptr(t.bucketsize)))
-	if c := h.oldbuckets; c != nil {
-		if !h.sameSizeGrow() {
-			// There used to be half as many buckets; mask down one more power of two.
-			m >>= 1
-		}
-		oldb := (*bmap)(unsafe.Pointer(uintptr(c) + (hash&m)*uintptr(t.bucketsize)))
-		if !evacuated(oldb) {
-			b = oldb
-		}
-	}
-	top := tophash(hash)
-bucketloop:
-	for ; b != nil; b = b.overflow(t) {
-		for i := uintptr(0); i < bucketCnt; i++ {
-			if b.tophash[i] != top {
-				if b.tophash[i] == emptyRest {
-					break bucketloop
-				}
-				continue
-			}
-			k := add(unsafe.Pointer(b), dataOffset+i*uintptr(t.keysize))
-			if t.indirectkey() {
-				k = *((*unsafe.Pointer)(k))
-			}
-			if t.key.equal(key, k) {
-				e := add(unsafe.Pointer(b), dataOffset+bucketCnt*uintptr(t.keysize)+i*uintptr(t.elemsize))
-				if t.indirectelem() {
-					e = *((*unsafe.Pointer)(e))
-				}
-				return k, e
-			}
-		}
-	}
-	return nil, nil
-}
-
-func mapaccess1_fat(t *maptype, h *hmap, key, zero unsafe.Pointer) unsafe.Pointer {
-	e := mapaccess1(t, h, key)
-	if e == unsafe.Pointer(&zeroVal[0]) {
-		return zero
-	}
-	return e
-}
-
-func mapaccess2_fat(t *maptype, h *hmap, key, zero unsafe.Pointer) (unsafe.Pointer, bool) {
-	e := mapaccess1(t, h, key)
-	if e == unsafe.Pointer(&zeroVal[0]) {
-		return zero, false
-	}
-	return e, true
 }
 ```
 ### 写map
 ```
-// Like mapaccess, but allocates a slot for the key if it is not present in the map.
 func mapassign(t *maptype, h *hmap, key unsafe.Pointer) unsafe.Pointer {
-	if h == nil {
+	if h == nil { // 不可assign nil
 		panic(plainError("assignment to entry in nil map"))
 	}
-	if raceenabled {
-		callerpc := getcallerpc()
-		pc := funcPC(mapassign)
-		racewritepc(unsafe.Pointer(h), callerpc, pc)
-		raceReadObjectPC(t.key, key, callerpc, pc)
-	}
-	if msanenabled {
-		msanread(key, t.key.size)
-	}
-	if h.flags&hashWriting != 0 {
+	if h.flags&hashWriting != 0 { // 并发写校验
 		throw("concurrent map writes")
 	}
 	hash := t.hasher(key, uintptr(h.hash0))
 
-	// Set hashWriting after calling t.hasher, since t.hasher may panic,
-	// in which case we have not actually done a write.
-	h.flags ^= hashWriting
+	h.flags ^= hashWriting // 设置写标志
 
-	if h.buckets == nil {
+	if h.buckets == nil { // 延迟分配一块bucket内存
 		h.buckets = newobject(t.bucket) // newarray(t.bucket, 1)
 	}
 
 again:
-	bucket := hash & bucketMask(h.B)
-	if h.growing() {
+	bucket := hash & bucketMask(h.B) // 确定写到的bucket
+	if h.growing() { // oldoverflow还有数据，还需要迁移
 		growWork(t, h, bucket)
 	}
 	b := (*bmap)(add(h.buckets, bucket*uintptr(t.bucketsize)))
-	top := tophash(hash)
+	top := tophash(hash) // 获取高8位
 
 	var inserti *uint8
 	var insertk unsafe.Pointer
@@ -439,7 +286,7 @@ again:
 bucketloop:
 	for {
 		for i := uintptr(0); i < bucketCnt; i++ {
-			if b.tophash[i] != top {
+			if b.tophash[i] != top { // 寻找到不同的且还未被使用的地址，否则就得扩容来保存新的数据了，这里因为即使一个数据被删除了，但是该数据对应的tophash[i]值并没有被清空（只有bucket中最后一个也被删除了，才会重置为0）
 				if isEmpty(b.tophash[i]) && inserti == nil {
 					inserti = &b.tophash[i]
 					insertk = add(unsafe.Pointer(b), dataOffset+i*uintptr(t.keysize))
@@ -450,6 +297,7 @@ bucketloop:
 				}
 				continue
 			}
+            // 找到相同的key
 			k := add(unsafe.Pointer(b), dataOffset+i*uintptr(t.keysize))
 			if t.indirectkey() {
 				k = *((*unsafe.Pointer)(k))
@@ -471,10 +319,10 @@ bucketloop:
 		b = ovf
 	}
 
-	// Did not find mapping for key. Allocate new cell & add entry.
-
-	// If we hit the max load factor or we have too many overflow buckets,
-	// and we're not already in the middle of growing, start growing.
+	// 没有找到可赋值的key位置，则分配一个新的cell
+	// old overflow已迁移完毕，map 元素数量+1 > Bucket的数量（不包含oveflow bucket）
+	// 且map元素数量*2 > Bucket的数量*6.5(装载因子)（不包含oveflow bucket） // 或者溢出桶数量太多
+    // 开始扩容
 	if !h.growing() && (overLoadFactor(h.count+1, h.B) || tooManyOverflowBuckets(h.noverflow, h.B)) {
 		hashGrow(t, h)
 		goto again // Growing the table invalidates everything, so try again
@@ -512,43 +360,76 @@ done:
 	}
 	return elem
 }
+func hashGrow(t *maptype, h *hmap) {
+	// If we've hit the load factor, get bigger.
+	// Otherwise, there are too many overflow buckets,
+	// so keep the same number of buckets and "grow" laterally.
+	bigger := uint8(1)
+	if !overLoadFactor(h.count+1, h.B) {
+		bigger = 0
+		h.flags |= sameSizeGrow
+	}
+	oldbuckets := h.buckets
+	newbuckets, nextOverflow := makeBucketArray(t, h.B+bigger, nil)
+
+	flags := h.flags &^ (iterator | oldIterator)
+	if h.flags&iterator != 0 { // 当扩容的时候，发现正在迭代（读）map，设置需要迭代old buckets
+		flags |= oldIterator
+	}
+	// commit the grow (atomic wrt gc)
+	h.B += bigger // 翻倍：容量不够，将旧桶的元素分流到新桶的两个bucket，等量扩容：频繁的assign和delete会导致
+	h.flags = flags
+	h.oldbuckets = oldbuckets
+	h.buckets = newbuckets
+	h.nevacuate = 0
+	h.noverflow = 0
+
+	if h.extra != nil && h.extra.overflow != nil {
+		// Promote current overflow buckets to the old generation.
+		if h.extra.oldoverflow != nil {
+			throw("oldoverflow is not nil")
+		}
+		h.extra.oldoverflow = h.extra.overflow
+		h.extra.overflow = nil
+	}
+	if nextOverflow != nil {
+		if h.extra == nil {
+			h.extra = new(mapextra)
+		}
+		h.extra.nextOverflow = nextOverflow
+	}
+
+	// the actual copying of the hash table data is done incrementally
+	// by growWork() and evacuate().
+}
 ```
 ### 删除map
 ```
 func mapdelete(t *maptype, h *hmap, key unsafe.Pointer) {
-	if raceenabled && h != nil {
-		callerpc := getcallerpc()
-		pc := funcPC(mapdelete)
-		racewritepc(unsafe.Pointer(h), callerpc, pc)
-		raceReadObjectPC(t.key, key, callerpc, pc)
-	}
-	if msanenabled && h != nil {
-		msanread(key, t.key.size)
-	}
-	if h == nil || h.count == 0 {
+	if h == nil || h.count == 0 { // 如果m未初始化，或者m中无元素，则直接返回
 		if t.hashMightPanic() {
 			t.hasher(key, 0) // see issue 23734
 		}
 		return
 	}
-	if h.flags&hashWriting != 0 {
+	if h.flags&hashWriting != 0 { // 当前正在写操作（赋值或删除），报错
 		throw("concurrent map writes")
 	}
 
-	hash := t.hasher(key, uintptr(h.hash0))
+	hash := t.hasher(key, uintptr(h.hash0)) // 获取key的hash值
 
 	// Set hashWriting after calling t.hasher, since t.hasher may panic,
 	// in which case we have not actually done a write (delete).
-	h.flags ^= hashWriting
+	h.flags ^= hashWriting // 设置写标志
 
-	bucket := hash & bucketMask(h.B)
-	if h.growing() {
+	bucket := hash & bucketMask(h.B) // 通过低位找到对应的bucket
+	if h.growing() { // 如果还有old buckets待迁移，将当前bucket迁移过去
 		growWork(t, h, bucket)
 	}
 	b := (*bmap)(add(h.buckets, bucket*uintptr(t.bucketsize)))
 	bOrig := b
 	top := tophash(hash)
-search:
+search: // 赋值是有扩容需求的，但是删除没有扩容需求，只需要按照tophash在buckets和overflow buckets中找到即可，找到删除后，count--
 	for ; b != nil; b = b.overflow(t) {
 		for i := uintptr(0); i < bucketCnt; i++ {
 			if b.tophash[i] != top {
@@ -818,6 +699,9 @@ next:
 * approximate： 近似
 * hiter: 击球手
 * cell: 细胞
+* minimum: 最低限度
+* sentinel: 哨兵
 
 ### 参考
-https://mp.weixin.qq.com/s/c_7omM1SocMlPnm8heyj4Q
+[哈希表](https://draveness.me/golang/docs/part2-foundation/ch03-datastructure/golang-hashmap/)
+[Map实现原理分析](https://mp.weixin.qq.com/s/c_7omM1SocMlPnm8heyj4Q)
