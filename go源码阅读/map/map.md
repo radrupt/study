@@ -1,11 +1,4 @@
-# map源码阅读（草稿）
-
-
-___
-进度  
-
-- [x] 第一遍粗看
-- [x] 第二遍细看
+# map源码阅读
 
 ### 常量
 
@@ -14,19 +7,16 @@ const (
 	bucketCntBits = 3 // cnt: count缩写 一个bucket最大存储k/v对数量为2^3, 即实际使用bucketCnt 字段
 	bucketCnt     = 1 << bucketCntBits
 
-    // 可以将它理解为基准来判断hash表中bucket里cell的数量情况，一个bucket最大平均存储cell的数量
-    // 即一个bucket平均存放6.5个cell
+    	// 可以将它理解为基准来判断hash表中bucket里cell的数量情况，一个bucket最大平均存储cell的数量, 6.5表示快满了
+    	// 即一个bucket平均存放6.5个cell
 	loadFactorNum = 13 // 装载因子常量
 	loadFactorDen = 2
 
-	// Maximum key or elem size to keep inline (instead of mallocing per element).
-	// Must fit in a uint8.
-	// Fast versions cannot handle big elems - the cutoff size for
-	// fast versions in cmd/compile/internal/gc/walk.go must be at most this elem.
-	maxKeySize  = 128 // key的最大内存大小，单位待确认？
-	maxElemSize = 128 // v的最大内存大小
+	// 键和值超过128位，即16字节，将被转换为指针
+	maxKeySize  = 128
+	maxElemSize = 128
 
-    // v存储地址相对结构体的偏移量，即通过结构体指针快速找到value的存储地址
+    	// v存储地址相对结构体的偏移量，即通过结构体指针快速找到value的存储地址
 	dataOffset = unsafe.Offsetof(struct {
 		b bmap
 		v int64
@@ -44,9 +34,9 @@ const (
 	minTopHash     = 5 // minimum tophash for a normal filled cell.
 
 	// flags， 注意这里的特点就是以下4个常量与操作为0
-	iterator     = 1 // there may be an iterator using buckets
-	oldIterator  = 2 // there may be an iterator using oldbuckets
-	hashWriting  = 4 // a goroutine is writing to the map
+	iterator     = 1 // 有一个正在使用buckets的迭代器
+	oldIterator  = 2 // 有一个正在使用oldbuckets的迭代器
+	hashWriting  = 4 // 一个携程正则进行写map
 	sameSizeGrow = 8 // 使用新的map等量扩容
 
 	// sentinel bucket ID for iterator checks
@@ -65,7 +55,7 @@ type hmap struct {
 
 	buckets    unsafe.Pointer // array of 2^B Buckets. may be nil if count==0.
 	oldbuckets unsafe.Pointer // 扩容后旧的buckets， 由于扩容后数据不是一次性迁移到新的buckets的，所以旧的依然需要保留用于操作
-	nevacuate  uintptr        // progress counter for evacuation (buckets less than this have been evacuated)
+	nevacuate  uintptr        // 扩容后的迁移进度
 
 	extra *mapextra // optional fields
 }
