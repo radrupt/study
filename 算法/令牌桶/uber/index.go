@@ -1,3 +1,5 @@
+package uber
+
 import (
 	"fmt"
 	"time"
@@ -5,7 +7,7 @@ import (
 	"go.uber.org/ratelimit"
 )
 
-func main() {
+func Uber() {
 	rl := ratelimit.New(100) // per second
 
 	prev := time.Now()
