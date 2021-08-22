@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+option go_package = "grpc-test/hello";
+package hello;
+
+message String {
+	string value = 1;
+}
+
+service Hello {
+	rpc Hello (String) returns (String);
+	rpc Channel (stream String) returns (stream String);
+}
+

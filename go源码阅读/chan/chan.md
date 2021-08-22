@@ -581,6 +581,7 @@ func closechan(c *hchan) {
 答：通过lock保证并发时qcount，buf，sendx，recvx，sendq，recvq,closed数据的安全读写，从而实现channel读写的并发安全
 2. channel如何保证有序？  
 答：通过lock和buf环形队列一起保证有序
+3. 对一个nil的channel读和写分别会发生什么？
 
 
 参考：  
